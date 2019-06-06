@@ -77,4 +77,4 @@ yarn build && node examples/queue-with-one-job.js
 
 #### Credits
 
-This is inspired by [Dropbox's Bandaid proxy](https://blogs.dropbox.com/tech/2018/03/meet-bandaid-the-dropbox-service-proxy/). Thanks a lot to [Arpad](https://github.com/aryszka) for the `Golang` implementation of [JobQueue](https://github.com/aryszka/jobqueue) was helpful in implementing this for JavaScript
+This is inspired by [Dropbox's Bandaid proxy](https://blogs.dropbox.com/tech/2018/03/meet-bandaid-the-dropbox-service-proxy/). Thanks a lot to Arpad for the `Golang` implementation of [JobQueue](https://github.com/aryszka/jobqueue) which was helpful in implementing this for JavaScript
