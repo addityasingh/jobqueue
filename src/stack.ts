@@ -1,8 +1,14 @@
 import { EventEmitter } from "events";
 
+export enum ErrorType {
+  CustomError = "customerror",
+  TimeoutError = "timeouterror"
+}
+
 export interface Job {
   timeout: number;
-  notify: EventEmitter;
+  channel: EventEmitter;
+  notify: (error?: any, type?: ErrorType) => any;
 }
 
 export class Stack {
@@ -24,12 +30,14 @@ export class Stack {
 
   push(job: Job) {
     this.list.push(job);
+    console.log(">>>>>>>job pushed in stack", job, this.list);
   }
 
   /**
    * Get last element from bottom of stack
    */
   getBottom(): Job {
+    console.log(">>>>>>>getBottom job in stack", this.list.length, this.list);
     return this.list[this.list.length - 1];
   }
 
