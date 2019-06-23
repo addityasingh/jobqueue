@@ -7,8 +7,9 @@ export enum ErrorType {
 
 export interface Job {
   timeout: number;
-  channel: EventEmitter;
-  notify: (error?: any, type?: ErrorType) => any;
+  index: number;
+  timer: NodeJS.Timer;
+  wait: (forceReject?: boolean, rejectReason?: any) => Promise<any | Error>;
 }
 
 export class Stack {
@@ -24,21 +25,16 @@ export class Stack {
     return this.capacity > 0 && this.list.length === this.capacity;
   }
 
+  getLength() {
+    return this.list.length;
+  }
+
   /**
    * Push at top of job stack
    */
 
   push(job: Job) {
     this.list.push(job);
-    console.log(">>>>>>>job pushed in stack", job, this.list);
-  }
-
-  /**
-   * Get last element from bottom of stack
-   */
-  getBottom(): Job {
-    console.log(">>>>>>>getBottom job in stack", this.list.length, this.list);
-    return this.list[this.list.length - 1];
   }
 
   /**
@@ -46,7 +42,8 @@ export class Stack {
    * @param job
    */
   remove(job: Job) {
-    //TODO
+    const index = this.list.findIndex(l => l.index === job.index);
+    this.list.splice(index, 1);
   }
 
   /**

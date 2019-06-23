@@ -1,10 +1,11 @@
 import { JobStack, TimeoutError } from "../jobstack";
+import { JobStackFullError } from "..";
 
 describe("Job stack", () => {
   describe("with single concurrency", () => {
     test("create stack successfully with default options", async () => {
       const queue = new JobStack();
-      const mockJob = jest.fn(() => {});
+      const mockJob = jest.fn(() => Promise.resolve());
       const err = await queue.execute(mockJob);
       expect(err).toBeUndefined();
       expect(mockJob).toHaveBeenCalled();
@@ -16,7 +17,7 @@ describe("Job stack", () => {
         timeout: 500,
         maxJobs: 1
       });
-      const mockJob = jest.fn(() => {});
+      const mockJob = jest.fn(() => Promise.resolve());
       const err = await queue.execute(mockJob);
       expect(err).toBeUndefined();
       expect(mockJob).toHaveBeenCalled();
@@ -24,15 +25,15 @@ describe("Job stack", () => {
 
     test("queue and process single job", async () => {
       const queue = new JobStack();
-      const mockJob = jest.fn(() => {});
-      const error = await queue.execute(mockJob);
-      expect(error).toBeUndefined();
+      const mockJob = jest.fn(() => Promise.resolve("mocked response"));
+      const response = await queue.execute(mockJob);
+      expect(response).toBe("mocked response");
       expect(mockJob).toHaveBeenCalled();
     });
 
     test("queue and process multiple jobs within max limit", async () => {
       const queue = new JobStack({ maxJobs: 5 });
-      const mockJob = jest.fn(() => {});
+      const mockJob = jest.fn(() => Promise.resolve("mocked response"));
       await queue.execute(mockJob);
       await queue.execute(mockJob);
       await queue.execute(mockJob);
@@ -41,57 +42,19 @@ describe("Job stack", () => {
       expect(mockJob).toHaveBeenCalledTimes(4);
     });
 
-    test("wait works as expected", async () => {
-      const queue = new JobStack();
-
-      expect.assertions(1);
-      const { error } = await queue.wait();
-      expect(error).toBeNull();
-    });
-
-    test("both sync and async jobs can be executed", async () => {
-      const queue = new JobStack();
-      const mockSyncJob = jest.fn(() => {});
-      const mockAsyncJob = jest.fn(
-        () =>
-          new Promise(resolve => {
-            setTimeout(() => resolve("loads of queue"), 500);
-          })
+    test("should log JobStackFullError when more jobs than max are sent", async () => {
+      const mockLogger = jest.fn(() => {});
+      const queue = new JobStack({ maxJobs: 1, logger: mockLogger });
+      const mockAsyncJob = jest.fn(() => Promise.resolve());
+      await queue.execute(mockAsyncJob);
+      await queue.execute(mockAsyncJob);
+      expect(mockLogger).toBeCalledWith(
+        new JobStackFullError("Job stack full")
       );
-
-      expect.assertions(2);
-      const executionError = await queue.execute(mockSyncJob);
-      expect(executionError).toBeNull();
-
-      const timedOutError = await queue.execute(mockAsyncJob);
-      expect(timedOutError).toBeNull();
     });
-
-    test.only("job should forcefully timeout only for a full queue", async () => {
-      const queue = new JobStack({ maxJobs: 1, timeout: 50 });
-      const mockSyncJob = () => {};
-      const mockAsyncJob = () =>
-        new Promise(resolve => {
-          setTimeout(() => resolve("loads of queue"), 500);
-        });
-
-      expect.assertions(1);
-
-      queue.execute(mockAsyncJob);
-      const timedOutError = await queue.execute(mockSyncJob);
-
-      // There are currently 2 problems.
-      // 1. Why is list reset after second execute() call
-      // 2. Why is the test run completed before the second execute() call
-      expect(timedOutError).not.toBeNull();
-    });
-
-    test.todo("queue and cancel jobs more than max limit");
-
-    test.todo("queue and cancel some jobs which timeout");
 
     test("queue and cancel jobs with timeout", async () => {
-      jest.useFakeTimers();
+      expect.assertions(2);
       const queue = new JobStack({ timeout: 500, maxJobs: 1 });
       let timedOutJobs = 0;
       const mockJobFail = jest.fn(
@@ -102,25 +65,36 @@ describe("Job stack", () => {
             }, 600);
           })
       );
-      // const mockJobFail = jest.fn(() => {})
-      await queue.execute(mockJobFail);
-
-      let error;
-      try {
-        error = await queue.execute(mockJobFail);
-      } catch (err) {
-        error = err;
-      }
-      expect(mockJobFail).toHaveBeenCalled();
-      if (error != null) {
+      const error = await queue.execute(mockJobFail);
+      if (error instanceof Error) {
         timedOutJobs += 1;
       }
 
+      expect(mockJobFail).toHaveBeenCalled();
       expect(timedOutJobs).toBe(1);
-      jest.useRealTimers();
     });
 
-    test.todo("queue and cancel jobs when stack full");
+    test("should cancel the timeout job and add latest in queue", async () => {
+      expect.assertions(5);
+      const mockLogger = jest.fn(() => {});
+      const queue = new JobStack({ maxJobs: 1, logger: mockLogger });
+      const mockJob = jest.fn(() => Promise.resolve("mock response"));
+      const mockAsyncJob = jest.fn(
+        () =>
+          new Promise(resolve => {
+            setTimeout(() => resolve("mock failure response"), 500);
+          })
+      );
+      const error = await queue.execute(mockAsyncJob);
+      const response = await queue.execute(mockJob);
+      expect(response).toBe("mock response");
+      expect(error).toBeInstanceOf(Error);
+      expect(error.message).toBe("Job timed out");
+      expect(mockLogger).toBeCalledWith(
+        new JobStackFullError("Job stack full")
+      );
+      expect(mockLogger).toBeCalledWith(new TimeoutError("Job timed out"));
+    });
   });
 
   describe("with multiple concurrency", () => {
