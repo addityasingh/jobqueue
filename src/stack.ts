@@ -1,10 +1,3 @@
-import { EventEmitter } from "events";
-
-export enum ErrorType {
-  CustomError = "customerror",
-  TimeoutError = "timeouterror"
-}
-
 export interface Job {
   timeout: number;
   index: number;

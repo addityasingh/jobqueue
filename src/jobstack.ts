@@ -2,10 +2,10 @@ import { Job, Stack } from "./stack";
 
 export type InputJob = (() => Promise<any>) | (() => any);
 
-export class TimeoutError extends Error {
+export class JobTimeoutError extends Error {
   constructor(message: string) {
     super(message);
-    this.name = "TimeoutError";
+    this.name = "JobTimeoutError";
   }
 }
 
@@ -22,7 +22,7 @@ class JobImpl implements Job {
   timer: NodeJS.Timer;
   wait: () => Promise<any | Error>;
 
-  constructor(timeout: number, index: number, job: () => Promise<any>) {
+  constructor(timeout: number, index: number, job: InputJob) {
     this.timeout = timeout;
     this.index = index;
     this.timer = null;
@@ -47,6 +47,8 @@ interface StackOptions {
   logger?: (message?: any) => void;
 }
 
+const noop = () => {};
+
 export class JobStack {
   private stack: Stack;
 
@@ -55,7 +57,7 @@ export class JobStack {
     this.options.maxConcurrency = options.maxConcurrency || 1;
     this.options.maxJobs = options.maxJobs || 1;
     this.options.timeout = options.timeout || 100;
-    this.options.logger = options.logger || console.log;
+    this.options.logger = options.logger || noop;
 
     this.stack = new Stack(this.options.maxJobs);
   }
@@ -73,48 +75,41 @@ export class JobStack {
     // if stack is full, throw JobStackFullError
     // remove the first element in queue, and add the job
     // else create a new job for incoming job with
-    // timeout handler, and done handler
-    // on timeout this job should let the stack remove it
-    // on done (error or success), the job should let the stack remove it
+    // timeout handler, and done handler.
+    // On timeout this job should let the stack remove it
+    // On done (error or success), the job should let the stack remove it
 
     const index = this.stack.getLength();
     const job = new JobImpl(this.options.timeout, index, inputJob);
 
-    // Sync operation: Check for JobStackFull and add job at top. No need to throw error
-    // Async operation: Execute job in parallel with timeout promise. Throw Timeout error
     return this.queue(job)
       .then(() => {
         this.stack.push(job);
-
         return Promise.race([
           job.wait(),
-          new Promise(resolve => {
+          new Promise((_, reject) => {
             job.timer = setTimeout(() => {
-              const err = new TimeoutError("Job timed out");
+              const err = new JobTimeoutError("Job timed out");
               this.options.logger(err);
-              resolve(err);
+              reject(err);
             }, this.options.timeout);
             job.timer.unref();
           })
         ])
-          .then(val => {
+          .catch(err => {
             if (job.timer != null) {
               clearTimeout(job.timer);
+              job.timer = null;
             }
-
-            //TODO: Find better alternative for testing the error constructors
-            if (val instanceof TimeoutError) {
-              this.stack.remove(job);
-            }
-            return val;
-          })
-          .catch(err => {
             this.stack.remove(job);
+            // JobTimeoutError
             return err;
-          });
+          })
+          .then(val => val);
       })
       .catch(err => {
         this.options.logger(err);
+        // JobStackFullError
         return err;
       });
   }

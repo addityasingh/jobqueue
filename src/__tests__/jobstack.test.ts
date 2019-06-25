@@ -1,4 +1,4 @@
-import { JobStack, TimeoutError } from "../jobstack";
+import { JobStack, JobTimeoutError } from "../jobstack";
 import { JobStackFullError } from "..";
 
 describe("Job stack", () => {
@@ -91,7 +91,7 @@ describe("Job stack", () => {
       expect(response).toBe("mock response");
       expect(error).toBeInstanceOf(Error);
       expect(error.message).toBe("Job timed out");
-      expect(mockLogger).toBeCalledWith(new TimeoutError("Job timed out"));
+      expect(mockLogger).toBeCalledWith(new JobTimeoutError("Job timed out"));
     });
 
     test("job should forcefully cancel oldest jobs for a full queue", async () => {
@@ -128,7 +128,7 @@ describe("Job stack", () => {
       expect(successJobResponse).not.toBeInstanceOf(Error);
       expect(mockLogger).toHaveBeenNthCalledWith(
         1,
-        new TimeoutError("Job timed out")
+        new JobTimeoutError("Job timed out")
       );
     });
   });

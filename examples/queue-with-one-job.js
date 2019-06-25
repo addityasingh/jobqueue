@@ -1,5 +1,5 @@
 const JobQueue = require("../dist/index").default;
-const { JobStackFullError, TimeoutError } = require("../dist/index");
+const { JobStackFullError, JobTimeoutError } = require("../dist/index");
 
 const dummyFetch = () =>
   new Promise(resolve => {
@@ -20,7 +20,7 @@ jobs.forEach(async job => {
     cancelledJobs += 1;
   }
 
-  if (err instanceof TimeoutError) {
+  if (err instanceof JobTimeoutError) {
     timedOutJobs += 1;
   }
 });

@@ -39,7 +39,7 @@ Wait for the job to be executed, based on the consurrency of the JobQueue
 
 ```javascript
 const JobQueue = require("../dist/index").default;
-const { JobStackFullError, TimeoutError } = require("../dist/index");
+const { JobStackFullError, JobTimeoutError } = require("../dist/index");
 
 const dummyFetch = () =>
   new Promise(resolve => {
@@ -58,12 +58,10 @@ jobs.forEach(async job => {
     cancelledJobs += 1;
   }
 
-  if (err instanceof TimeoutError) {
+  if (err instanceof JobTimeoutError) {
     timedOutJobs += 1;
   }
 });
-
-queue.flush();
 
 console.log(">>>>>>Timed out jobs", timedOutJobs);
 console.log(">>>>>>Cancelled jobs", cancelledJobs);

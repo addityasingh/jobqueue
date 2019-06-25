@@ -1,9 +1,9 @@
 import {
   JobStack as JobQueue,
-  TimeoutError,
+  JobTimeoutError,
   JobStackFullError
 } from "./jobstack";
 
-export { TimeoutError, JobStackFullError };
+export { JobTimeoutError, JobStackFullError };
 
 export default JobQueue;
