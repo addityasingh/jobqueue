@@ -43,7 +43,7 @@ class JobImpl implements Job {
 interface StackOptions {
   maxConcurrency?: number;
   timeout?: number; // in ms
-  maxJobs?: number; // Not sure if this is needed together with maxConcurrency
+  maxJobs?: number;
   logger?: (message?: any) => void;
 }
 
@@ -60,6 +60,15 @@ export class JobStack {
     this.stack = new Stack(this.options.maxJobs);
   }
 
+  private async queue(job) {
+    if (this.stack.isFull()) {
+      const oldestJob = this.stack.shift();
+      this.stack.push(job);
+      return oldestJob.wait(true, new JobStackFullError("Job stack full"));
+    }
+    return Promise.resolve(null);
+  }
+
   execute(inputJob: InputJob): Promise<any | Error> {
     // if stack is full, throw JobStackFullError
     // remove the first element in queue, and add the job
@@ -73,42 +82,40 @@ export class JobStack {
 
     // Sync operation: Check for JobStackFull and add job at top. No need to throw error
     // Async operation: Execute job in parallel with timeout promise. Throw Timeout error
-    if (this.stack.isFull()) {
-      const oldestJob = this.stack.shift();
-      this.options.logger(new JobStackFullError("Job stack full"));
-      // oldestJob.wait(true, new Error("Job stack full"));
-    }
-    this.stack.push(job);
+    return this.queue(job)
+      .then(() => {
+        this.stack.push(job);
 
-    //TODO: The most important and only part now missing is
-    // to notify(reject) the correct promise in case of Timeout or JobStackFull errors
-    // individually
-    return Promise.race([
-      job.wait(),
-      new Promise(resolve => {
-        //TODO: Just log the error for now and return the Timeout later to fix it
-        job.timer = setTimeout(() => {
-          const err = new TimeoutError("Job timed out");
-          this.options.logger(err);
-          resolve(err);
-        }, this.options.timeout);
-        job.timer.unref();
-      })
-    ])
-      .then(val => {
-        if (job.timer != null) {
-          clearTimeout(job.timer);
-        }
+        return Promise.race([
+          job.wait(),
+          new Promise(resolve => {
+            job.timer = setTimeout(() => {
+              const err = new TimeoutError("Job timed out");
+              this.options.logger(err);
+              resolve(err);
+            }, this.options.timeout);
+            job.timer.unref();
+          })
+        ])
+          .then(val => {
+            if (job.timer != null) {
+              clearTimeout(job.timer);
+            }
 
-        //TODO: Find better alternative for testing the error constructors
-        if (val instanceof TimeoutError) {
-          this.stack.remove(job);
-        }
-        return val;
+            //TODO: Find better alternative for testing the error constructors
+            if (val instanceof TimeoutError) {
+              this.stack.remove(job);
+            }
+            return val;
+          })
+          .catch(err => {
+            this.stack.remove(job);
+            return err;
+          });
       })
       .catch(err => {
-        this.stack.remove(job);
-        throw err;
+        this.options.logger(err);
+        return err;
       });
   }
 }

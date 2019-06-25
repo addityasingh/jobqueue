@@ -47,10 +47,11 @@ describe("Job stack", () => {
       const queue = new JobStack({ maxJobs: 1, logger: mockLogger });
       const mockAsyncJob = jest.fn(() => Promise.resolve());
       await queue.execute(mockAsyncJob);
-      await queue.execute(mockAsyncJob);
+      const error = await queue.execute(mockAsyncJob);
       expect(mockLogger).toBeCalledWith(
         new JobStackFullError("Job stack full")
       );
+      expect(error.message).toBe("Job stack full");
     });
 
     test("queue and cancel jobs with timeout", async () => {
@@ -75,9 +76,9 @@ describe("Job stack", () => {
     });
 
     test("should cancel the timeout job and add latest in queue", async () => {
-      expect.assertions(5);
+      expect.assertions(4);
       const mockLogger = jest.fn(() => {});
-      const queue = new JobStack({ maxJobs: 1, logger: mockLogger });
+      const queue = new JobStack({ maxJobs: 5, logger: mockLogger });
       const mockJob = jest.fn(() => Promise.resolve("mock response"));
       const mockAsyncJob = jest.fn(
         () =>
@@ -90,10 +91,45 @@ describe("Job stack", () => {
       expect(response).toBe("mock response");
       expect(error).toBeInstanceOf(Error);
       expect(error.message).toBe("Job timed out");
-      expect(mockLogger).toBeCalledWith(
-        new JobStackFullError("Job stack full")
-      );
       expect(mockLogger).toBeCalledWith(new TimeoutError("Job timed out"));
+    });
+
+    test("job should forcefully cancel oldest jobs for a full queue", async () => {
+      expect.assertions(5);
+      const mockLogger = jest.fn(() => {});
+      const queue = new JobStack({
+        maxJobs: 5,
+        timeout: 400,
+        logger: mockLogger
+      });
+      const mockAsyncJob1 = jest.fn(
+        () =>
+          new Promise(resolve => {
+            setTimeout(() => resolve("mock failure response"), 500);
+          })
+      );
+      const mockAsyncJob2 = jest.fn(
+        () =>
+          new Promise(resolve => {
+            setTimeout(() => resolve("mock success response"), 200);
+          })
+      );
+
+      // We have assigned the promise to queue the 2 jobs
+      // but still being able to find the returned error or response
+      const errorJobPromise = queue.execute(mockAsyncJob1);
+      const successJobPromise = queue.execute(mockAsyncJob2);
+      const errorJobResponse = await errorJobPromise;
+      const successJobResponse = await successJobPromise;
+
+      expect(errorJobResponse).toBeInstanceOf(Error);
+      expect(errorJobResponse.message).toBe("Job timed out");
+      expect(successJobResponse).toBe("mock success response");
+      expect(successJobResponse).not.toBeInstanceOf(Error);
+      expect(mockLogger).toHaveBeenNthCalledWith(
+        1,
+        new TimeoutError("Job timed out")
+      );
     });
   });
 
