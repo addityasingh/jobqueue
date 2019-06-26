@@ -1,17 +1,23 @@
 import { Job, Stack } from "./stack";
+import debug from "debug";
+const jobqueueDebug = debug("jobqueue");
+
+const noop = () => {};
+const JOB_STACK_FULL = "Job stack full";
+const JOB_TIMED_OUT = "Job timed out";
 
 export type InputJob = (() => Promise<any>) | (() => any);
 
 export class JobTimeoutError extends Error {
-  constructor(message: string) {
-    super(message);
+  constructor() {
+    super(JOB_TIMED_OUT);
     this.name = "JobTimeoutError";
   }
 }
 
 export class JobStackFullError extends Error {
-  constructor(message: string) {
-    super(message);
+  constructor() {
+    super(JOB_STACK_FULL);
     this.name = "JobStackFullError";
   }
 }
@@ -30,6 +36,7 @@ class JobImpl implements Job {
     this.wait = (forceReject?: boolean, rejectReason: any = "") =>
       new Promise((resolve, reject) => {
         if (forceReject) {
+          jobqueueDebug("Force reject");
           reject(rejectReason);
         } else {
           job()
@@ -47,8 +54,6 @@ interface StackOptions {
   logger?: (message?: any) => void;
 }
 
-const noop = () => {};
-
 export class JobStack {
   private stack: Stack;
 
@@ -64,9 +69,10 @@ export class JobStack {
 
   private async queue(job) {
     if (this.stack.isFull()) {
+      jobqueueDebug("Job stack full");
       const oldestJob = this.stack.shift();
       this.stack.push(job);
-      return oldestJob.wait(true, new JobStackFullError("Job stack full"));
+      return oldestJob.wait(true, new JobStackFullError());
     }
     return Promise.resolve(null);
   }
@@ -89,20 +95,21 @@ export class JobStack {
           job.wait(),
           new Promise((_, reject) => {
             job.timer = setTimeout(() => {
-              const err = new JobTimeoutError("Job timed out");
-              this.options.logger(err);
+              const err = new JobTimeoutError();
               reject(err);
             }, this.options.timeout);
             job.timer.unref();
           })
         ])
           .catch(err => {
+            this.options.logger(err);
+            jobqueueDebug("Error in executing input job");
             if (job.timer != null) {
               clearTimeout(job.timer);
               job.timer = null;
             }
             this.stack.remove(job);
-            // JobTimeoutError
+            // JobTimeoutError or actual error from the job execution
             return err;
           })
           .then(val => val);

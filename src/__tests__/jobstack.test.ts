@@ -48,9 +48,7 @@ describe("Job stack", () => {
       const mockAsyncJob = jest.fn(() => Promise.resolve());
       await queue.execute(mockAsyncJob);
       const error = await queue.execute(mockAsyncJob);
-      expect(mockLogger).toBeCalledWith(
-        new JobStackFullError("Job stack full")
-      );
+      expect(mockLogger).toBeCalledWith(new JobStackFullError());
       expect(error.message).toBe("Job stack full");
     });
 
@@ -91,7 +89,7 @@ describe("Job stack", () => {
       expect(response).toBe("mock response");
       expect(error).toBeInstanceOf(Error);
       expect(error.message).toBe("Job timed out");
-      expect(mockLogger).toBeCalledWith(new JobTimeoutError("Job timed out"));
+      expect(mockLogger).toBeCalledWith(new JobTimeoutError());
     });
 
     test("job should forcefully cancel oldest jobs for a full queue", async () => {
@@ -126,10 +124,7 @@ describe("Job stack", () => {
       expect(errorJobResponse.message).toBe("Job timed out");
       expect(successJobResponse).toBe("mock success response");
       expect(successJobResponse).not.toBeInstanceOf(Error);
-      expect(mockLogger).toHaveBeenNthCalledWith(
-        1,
-        new JobTimeoutError("Job timed out")
-      );
+      expect(mockLogger).toHaveBeenNthCalledWith(1, new JobTimeoutError());
     });
   });
 
