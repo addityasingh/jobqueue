@@ -33,7 +33,7 @@ Flush all the jobs and close the job queue
 
 #### `jobqueue.wait()`
 
-Wait for the job to be executed, based on the consurrency of the JobQueue
+Wait for the job to be executed, based on the concurrency of the JobQueue
 
 ## Basic Example
 
