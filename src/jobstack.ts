@@ -1,10 +1,11 @@
 import { Job, Stack } from "./stack";
-import { EventEmitter } from "events";
 
-export class TimeoutError extends Error {
+export type InputJob = (() => Promise<any>) | (() => any);
+
+export class JobTimeoutError extends Error {
   constructor(message: string) {
     super(message);
-    this.name = "TimeoutError";
+    this.name = "JobTimeoutError";
   }
 }
 
@@ -15,120 +16,101 @@ export class JobStackFullError extends Error {
   }
 }
 
-interface StackOptions {
-  maxConcurrency: number;
-  timeout: number; // in ms
-  maxJobs: number; // Not sure if this is needed together with maxConcurrency
+class JobImpl implements Job {
+  timeout: number;
+  index: number;
+  timer: NodeJS.Timer;
+  wait: () => Promise<any | Error>;
+
+  constructor(timeout: number, index: number, job: InputJob) {
+    this.timeout = timeout;
+    this.index = index;
+    this.timer = null;
+
+    this.wait = (forceReject?: boolean, rejectReason: any = "") =>
+      new Promise((resolve, reject) => {
+        if (forceReject) {
+          reject(rejectReason);
+        } else {
+          job()
+            .then(resolve)
+            .catch(reject);
+        }
+      });
+  }
 }
 
-//TODO: Check and update if this value is optimal for polling
-const POLLER_INTERVAL = 10;
+interface StackOptions {
+  maxConcurrency?: number;
+  timeout?: number; // in ms
+  maxJobs?: number;
+  logger?: (message?: any) => void;
+}
 
-class DoneEventEmitter extends EventEmitter {}
-
-class RequestEventEmitter extends EventEmitter {}
-
-class ErrorEventEmitter extends EventEmitter {}
+const noop = () => {};
 
 export class JobStack {
   private stack: Stack;
-  private done: DoneEventEmitter;
-  private request: RequestEventEmitter;
-  private timer: NodeJS.Timer;
 
   constructor(private options: StackOptions = {} as StackOptions) {
     // TODO: The concurrency is not yet implemented. Implement using pool mechanism
-    this.options.maxConcurrency = this.options.maxConcurrency || 1;
-    this.options.maxJobs = this.options.maxJobs || 1;
-    // TODO: find an optimal fallback for timeout
-    this.options.timeout = this.options.timeout || 1000;
-    this.done = new DoneEventEmitter();
-    this.timer = null;
+    this.options.maxConcurrency = options.maxConcurrency || 1;
+    this.options.maxJobs = options.maxJobs || 1;
+    this.options.timeout = options.timeout || 100;
+    this.options.logger = options.logger || noop;
 
     this.stack = new Stack(this.options.maxJobs);
-    this.run();
   }
 
-  /**
-   * Flush and stop the job processing
-   */
-  flush() {
-    clearInterval(this.timer);
-    this.timer = null;
-  }
-
-  /**
-   * Queue a new job, waits for errors if any
-   */
-  async wait() {
-    const job = this.newJob();
-    this.request.emit("request", job);
-
-    const errorChannel = new Promise(resolve => {
-      //TODO: this may block if `error` is not emitted with null value
-      job.notify.on("error", err => {
-        resolve(err);
-      });
-    });
-
-    return {
-      done: () => {
-        this.done.emit("done");
-      },
-      err: await errorChannel
-    };
-  }
-
-  async execute(job: () => any): Promise<{} | Error> {
-    const { done, err } = await this.wait();
-    if (err != null) {
-      job();
-      done();
-      return null;
-    } else {
-      return err;
+  private async queue(job) {
+    if (this.stack.isFull()) {
+      const oldestJob = this.stack.shift();
+      this.stack.push(job);
+      return oldestJob.wait(true, new JobStackFullError("Job stack full"));
     }
+    return Promise.resolve(null);
   }
 
-  private run() {
-    this.timer = setInterval(async () => {
-      const oldest = this.stack.getBottom();
-      let timeout = oldest.timeout;
+  execute(inputJob: InputJob): Promise<any | Error> {
+    // if stack is full, throw JobStackFullError
+    // remove the first element in queue, and add the job
+    // else create a new job for incoming job with
+    // timeout handler, and done handler.
+    // On timeout this job should let the stack remove it
+    // On done (error or success), the job should let the stack remove it
 
-      // Handle incoming requests
-      this.request.on("request", (job: Job) => {
-        if (this.stack.isFull()) {
-          const oldest = this.stack.shift();
-          oldest.notify.emit("error", new JobStackFullError("Job stack full"));
-        }
+    const index = this.stack.getLength();
+    const job = new JobImpl(this.options.timeout, index, inputJob);
 
+    return this.queue(job)
+      .then(() => {
         this.stack.push(job);
+        return Promise.race([
+          job.wait(),
+          new Promise((_, reject) => {
+            job.timer = setTimeout(() => {
+              const err = new JobTimeoutError("Job timed out");
+              this.options.logger(err);
+              reject(err);
+            }, this.options.timeout);
+            job.timer.unref();
+          })
+        ])
+          .catch(err => {
+            if (job.timer != null) {
+              clearTimeout(job.timer);
+              job.timer = null;
+            }
+            this.stack.remove(job);
+            // JobTimeoutError
+            return err;
+          })
+          .then(val => val);
+      })
+      .catch(err => {
+        this.options.logger(err);
+        // JobStackFullError
+        return err;
       });
-
-      // Handle completion of jobs
-      this.done.on("done", () => {
-        if (!this.stack.isEmpty()) {
-          const job = this.stack.pop();
-          // Emit this event for clarity, but no listener is registered for this
-          job.notify.emit("success");
-        }
-      });
-
-      // Handle timeout and remove the oldest job with throwing timeout error
-      let timer = setTimeout(() => {
-        oldest.notify.emit("error", new TimeoutError("Job timed out"));
-        this.stack.shift();
-      }, timeout);
-      timer.unref();
-    }, POLLER_INTERVAL);
-
-    this.timer.unref();
-  }
-
-  private newJob(): Job {
-    return {
-      notify: new ErrorEventEmitter(),
-      timeout: this.options.timeout
-    };
   }
 }

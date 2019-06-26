@@ -1,8 +1,8 @@
-import { EventEmitter } from "events";
-
 export interface Job {
   timeout: number;
-  notify: EventEmitter;
+  index: number;
+  timer: NodeJS.Timer;
+  wait: (forceReject?: boolean, rejectReason?: any) => Promise<any | Error>;
 }
 
 export class Stack {
@@ -18,6 +18,10 @@ export class Stack {
     return this.capacity > 0 && this.list.length === this.capacity;
   }
 
+  getLength() {
+    return this.list.length;
+  }
+
   /**
    * Push at top of job stack
    */
@@ -27,18 +31,12 @@ export class Stack {
   }
 
   /**
-   * Get last element from bottom of stack
-   */
-  getBottom(): Job {
-    return this.list[this.list.length - 1];
-  }
-
-  /**
    * Remove specific job
    * @param job
    */
   remove(job: Job) {
-    //TODO
+    const index = this.list.findIndex(l => l.index === job.index);
+    this.list.splice(index, 1);
   }
 
   /**
