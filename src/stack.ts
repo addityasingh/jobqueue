@@ -2,7 +2,7 @@ export interface Job {
   timeout: number;
   index: number;
   timer: NodeJS.Timer;
-  wait: (forceReject?: boolean, rejectReason?: any) => Promise<any | Error>;
+  wait: (rejectReason?: any) => Promise<any | Error>;
 }
 
 export class Stack {

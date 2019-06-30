@@ -39,7 +39,7 @@ Wait for the job to be executed, based on the concurrency of the JobQueue
 
 ```javascript
 const JobQueue = require("../dist/index").default;
-const { JobStackFullError, JobTimeoutError } = require("../dist/index");
+const { JobQueueFullError, JobTimeoutError } = require("../dist/index");
 
 const dummyFetch = () =>
   new Promise(resolve => {
@@ -54,7 +54,7 @@ const jobs = Array.from({ length: 2 }).map(() => dummyFetch);
 
 jobs.forEach(async job => {
   const err = await queue.execute(job);
-  if (err instanceof JobStackFullError) {
+  if (err instanceof JobQueueFullError) {
     cancelledJobs += 1;
   }
 
