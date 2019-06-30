@@ -1,18 +1,17 @@
-import { JobStack, JobTimeoutError } from "../jobstack";
-import { JobStackFullError } from "..";
+import { JobQueue, JobTimeoutError, JobQueueFullError } from "../jobqueue";
 
-describe("Job stack", () => {
+describe("Job queue", () => {
   describe("with single concurrency", () => {
-    test("create stack successfully with default options", async () => {
-      const queue = new JobStack();
+    test("create queue successfully with default options", async () => {
+      const queue = new JobQueue();
       const mockJob = jest.fn(() => Promise.resolve());
       const err = await queue.execute(mockJob);
       expect(err).toBeUndefined();
       expect(mockJob).toHaveBeenCalled();
     });
 
-    test("create stack successfully with provided options", async () => {
-      const queue = new JobStack({
+    test("create queue successfully with provided options", async () => {
+      const queue = new JobQueue({
         maxConcurrency: 1,
         timeout: 500,
         maxJobs: 1
@@ -24,7 +23,7 @@ describe("Job stack", () => {
     });
 
     test("queue and process single job", async () => {
-      const queue = new JobStack();
+      const queue = new JobQueue();
       const mockJob = jest.fn(() => Promise.resolve("mocked response"));
       const response = await queue.execute(mockJob);
       expect(response).toBe("mocked response");
@@ -32,7 +31,7 @@ describe("Job stack", () => {
     });
 
     test("queue and process multiple jobs within max limit", async () => {
-      const queue = new JobStack({ maxJobs: 5 });
+      const queue = new JobQueue({ maxJobs: 5 });
       const mockJob = jest.fn(() => Promise.resolve("mocked response"));
       await queue.execute(mockJob);
       await queue.execute(mockJob);
@@ -42,19 +41,19 @@ describe("Job stack", () => {
       expect(mockJob).toHaveBeenCalledTimes(4);
     });
 
-    test("should log JobStackFullError when more jobs than max are sent", async () => {
+    test("should log JobQueueFullError when more jobs than max are sent", async () => {
       const mockLogger = jest.fn(() => {});
-      const queue = new JobStack({ maxJobs: 1, logger: mockLogger });
+      const queue = new JobQueue({ maxJobs: 1, logger: mockLogger });
       const mockAsyncJob = jest.fn(() => Promise.resolve());
       await queue.execute(mockAsyncJob);
       const error = await queue.execute(mockAsyncJob);
-      expect(mockLogger).toBeCalledWith(new JobStackFullError());
-      expect(error.message).toBe("Job stack full");
+      expect(mockLogger).toBeCalledWith(new JobQueueFullError());
+      expect(error.message).toBe("Job queue full");
     });
 
     test("queue and cancel jobs with timeout", async () => {
       expect.assertions(2);
-      const queue = new JobStack({ timeout: 500, maxJobs: 1 });
+      const queue = new JobQueue({ timeout: 500, maxJobs: 1 });
       let timedOutJobs = 0;
       const mockJobFail = jest.fn(
         () =>
@@ -76,7 +75,7 @@ describe("Job stack", () => {
     test("should cancel the timeout job and add latest in queue", async () => {
       expect.assertions(4);
       const mockLogger = jest.fn(() => {});
-      const queue = new JobStack({ maxJobs: 5, logger: mockLogger });
+      const queue = new JobQueue({ maxJobs: 5, logger: mockLogger });
       const mockJob = jest.fn(() => Promise.resolve("mock response"));
       const mockAsyncJob = jest.fn(
         () =>
@@ -95,7 +94,7 @@ describe("Job stack", () => {
     test("job should forcefully cancel oldest jobs for a full queue", async () => {
       expect.assertions(5);
       const mockLogger = jest.fn(() => {});
-      const queue = new JobStack({
+      const queue = new JobQueue({
         maxJobs: 5,
         timeout: 400,
         logger: mockLogger
@@ -129,7 +128,7 @@ describe("Job stack", () => {
   });
 
   describe("with multiple concurrency", () => {
-    test.todo("create stack with max concurrency successfully");
-    test.todo("queue and process job in stack with multiple concurrency");
+    test.todo("create queue with max concurrency successfully");
+    test.todo("queue and process job in queue with multiple concurrency");
   });
 });

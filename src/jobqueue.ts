@@ -3,7 +3,7 @@ import debug from "debug";
 const jobqueueDebug = debug("jobqueue");
 
 const noop = () => {};
-const JOB_STACK_FULL = "Job stack full";
+const JOB_QUEUE_FULL = "Job queue full";
 const JOB_TIMED_OUT = "Job timed out";
 
 export type InputJob = (() => Promise<any>) | (() => any);
@@ -15,10 +15,10 @@ export class JobTimeoutError extends Error {
   }
 }
 
-export class JobStackFullError extends Error {
+export class JobQueueFullError extends Error {
   constructor() {
-    super(JOB_STACK_FULL);
-    this.name = "JobStackFullError";
+    super(JOB_QUEUE_FULL);
+    this.name = "JobQueueFullError";
   }
 }
 
@@ -33,31 +33,22 @@ class JobImpl implements Job {
     this.index = index;
     this.timer = null;
 
-    this.wait = (forceReject?: boolean, rejectReason: any = "") =>
-      new Promise((resolve, reject) => {
-        if (forceReject) {
-          jobqueueDebug("Force reject");
-          reject(rejectReason);
-        } else {
-          job()
-            .then(resolve)
-            .catch(reject);
-        }
-      });
+    this.wait = (rejectReason: any = "") =>
+      rejectReason ? Promise.reject(rejectReason) : job();
   }
 }
 
-interface StackOptions {
+interface QueueOptions {
   maxConcurrency?: number;
   timeout?: number; // in ms
   maxJobs?: number;
   logger?: (message?: any) => void;
 }
 
-export class JobStack {
+export class JobQueue {
   private stack: Stack;
 
-  constructor(private options: StackOptions = {} as StackOptions) {
+  constructor(private options: QueueOptions = {} as QueueOptions) {
     // TODO: The concurrency is not yet implemented. Implement using pool mechanism
     this.options.maxConcurrency = options.maxConcurrency || 1;
     this.options.maxJobs = options.maxJobs || 1;
@@ -67,18 +58,18 @@ export class JobStack {
     this.stack = new Stack(this.options.maxJobs);
   }
 
-  private async queue(job) {
+  private queue(job) {
     if (this.stack.isFull()) {
-      jobqueueDebug("Job stack full");
+      jobqueueDebug("Job queue full");
       const oldestJob = this.stack.shift();
       this.stack.push(job);
-      return oldestJob.wait(true, new JobStackFullError());
+      return oldestJob.wait(new JobQueueFullError());
     }
-    return Promise.resolve(null);
+    return Promise.resolve();
   }
 
   execute(inputJob: InputJob): Promise<any | Error> {
-    // if stack is full, throw JobStackFullError
+    // if stack is full, throw JobQueueFullError
     // remove the first element in queue, and add the job
     // else create a new job for incoming job with
     // timeout handler, and done handler.
@@ -91,6 +82,7 @@ export class JobStack {
     return this.queue(job)
       .then(() => {
         this.stack.push(job);
+
         return Promise.race([
           job.wait(),
           new Promise((_, reject) => {
@@ -104,10 +96,12 @@ export class JobStack {
           .catch(err => {
             this.options.logger(err);
             jobqueueDebug("Error in executing input job");
+
             if (job.timer != null) {
               clearTimeout(job.timer);
               job.timer = null;
             }
+
             this.stack.remove(job);
             // JobTimeoutError or actual error from the job execution
             return err;
@@ -116,7 +110,7 @@ export class JobStack {
       })
       .catch(err => {
         this.options.logger(err);
-        // JobStackFullError
+        // JobQueueFullError
         return err;
       });
   }
